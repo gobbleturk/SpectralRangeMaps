@@ -1,0 +1,51 @@
+% Example full flow
+
+% load images
+    % animalTensor is an nr x nc x nScenario binary array,
+    % where a 1 in spot (r,c,s) refers to a predicted presence in cell
+    % (r,c) according to scenario s.
+    load animalTensor
+    % animOrig is an nr x nc array, where a 1 in spot (r,c) corresponds
+    % to a present day presence in cell (r,c).
+    load animOrig
+    
+% Compute pairwise similarities
+    A = sum(animalTensor, 3) > 0 | animOrig;
+
+    % create overlap with present day map and map pixel values for cosine
+    novelPresence = 0.5;
+    keptPresence = 1.0;
+    novelAbsence = -1.0;
+    keptAbsence = -0.5;
+    
+    animalValueTensor = double(animalTensor);
+    animalValueTensor(animalTensor & animOrig & A) = keptPresence;
+    animalValueTensor(animalTensor & (1 - animOrig) & A) = novelPresence;
+    animalValueTensor((1 - animalTensor) & animOrig & A) = novelAbsence;
+    animalValueTensor((1 - animalTensor) & ( 1 - animOrig) & A) = keptAbsence;
+    pairMat = pairCosineSimG(animalValueTensor); % in codes/simMeasure
+ 
+% Spectral Embedding
+
+    kNearestNeighbors = 5;
+    % Typically need 1 more eigenvector than embedding dimension.
+    numEigenvectors = 3; 
+   
+    sparseMat = sparsifySimilarityMatrix(pairMat,kNearestNeighbors);
+    [l,lSym,lRW] = computeLaplacianG(sparseMat);
+    [spectralEmbedding] = laplacianToEmbedding(lRW,numEigenvectors);
+    % The spectralEmbedding is the first few non-trivial eigenvectors of
+    % the laplacian. For a connected graph there is a single trivial
+    % eigenvector corresponding to an eigenvector of zero.
+
+% Cluster
+
+    clusterEvalFunc = 'DaviesBouldin';
+    clusterMethod = 'linkage'; %kmeans, linkage
+    nClust = [2:6]; % Number of clusters to try
+    % This requires the Matlab stat toolbox.
+    evalRes = evalclusters(spectralEmbedding(:,2:3),clusterMethod,clusterEvalFunc,'klist',nClust);
+    
+% Plot
+
+    ax = gscatter(spectralEmbedding(:,2),spectralEmbedding(:,3),evalRes.OptimalY);
